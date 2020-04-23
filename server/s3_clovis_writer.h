@@ -53,7 +53,7 @@ class S3ClovisWriterContext : public S3AsyncOpContextBase {
 
   // Call this when you want to do write op.
   void init_write_op_ctx(size_t clovis_buf_count) {
-    clovis_rw_op_context = create_basic_rw_op_ctx(clovis_buf_count, 0, false);
+    clovis_rw_op_context = create_basic_rw_op_ctx(clovis_buf_count, 0);
   }
 
   struct s3_clovis_rw_op_context* get_clovis_rw_op_ctx() {
