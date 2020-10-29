@@ -71,7 +71,9 @@ void S3RequestObject::set_bucket_name(const std::string& name) {
 }
 
 void S3RequestObject::set_action_str(const std::string& action) {
-  s3_log(S3_LOG_INFO, request_id, "S3Action =  %s\n", action.c_str());
+  if (action != "HeadService") {
+    s3_log(S3_LOG_INFO, request_id, "S3Action =  %s\n", action.c_str());
+  }
   s3_action = action;
 }
 
@@ -148,9 +150,6 @@ void S3RequestObject::populate_and_log_audit_info() {
   if (!error_code_str.empty()) {
     audit_log_obj.set_error_code(error_code_str);
   }
-
-  // TODO
-  // audit_log_obj.set_object_size(length);
 
   audit_log_obj.set_bucket_name(bucket_name);
   audit_log_obj.set_remote_ip(get_header_value("X-Forwarded-For"));

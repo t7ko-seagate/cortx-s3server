@@ -17,7 +17,7 @@
 # please email opensource@seagate.com or cortx-questions@seagate.com.
 #
 
-S3Config_Sections: [S3_SERVER_CONFIG, S3_AUTH_CONFIG, S3_MOTR_CONFIG, S3_THIRDPARTY_CONFIG]
+S3Config_Sections: [S3_SERVER_CONFIG, S3_AUTH_CONFIG, S3_MOTR_CONFIG, S3_THIRDPARTY_CONFIG, S3_VERSION_CONFIG]
 S3_SERVER_CONFIG:                                     # Section for S3 Server
    S3_DAEMON_WORKING_DIR: "/var/motr/"                # S3 Daemon will run in the specified directory
    S3_DAEMON_DO_REDIRECTION: 1                          # Do redirection of stderr, stdout and stdin to /dev/null
@@ -67,6 +67,9 @@ S3_SERVER_CONFIG:                                     # Section for S3 Server
    S3_SERVER_ENABLE_OBJECT_LEAK_TRACKING: false         # Enables the object leak feature changes
    S3_REDIS_SERVER_ADDRESS: "127.0.0.1"                 # In case if redis is used for kvs contains redis server address
    S3_REDIS_SERVER_PORT: 6379                           # In case if redis is used for kvs contains redis server port
+   S3_SERVER_MOTR_ETIMEDOUT_MAX_THRESHOLD: 5            # Number of ETIMEDOUT errors per monitoring window before s3server restart
+   S3_SERVER_MOTR_ETIMEDOUT_WINDOW_SEC: 60              # Monitoring window for motr ETIMEDOUT errors in seconds
+   S3_SERVER_ENABLE_ADDB_DUMP: true                     # If set to true, then addb dump will be collected
 S3_AUTH_CONFIG:                                         # Section for S3 Auth Service
    S3_AUTH_IP_ADDR: ipv4:127.0.0.1                      # Auth server IP address Should be in below format:
                                                         # ipv4 address format: ipv4:127.0.0.1
@@ -86,7 +89,7 @@ S3_MOTR_CONFIG:                                     # Section for S3 Motr
    S3_MOTR_IS_OOSTORE: true                           # Motr oostore mode is set when this flag is true, default is false (oostore mode is not set)
    S3_MOTR_IS_READ_VERIFY: false                      # Motr Flag for verify-on-read. Parity is checked during READ's if this flag is true, default is false
    S3_MOTR_TM_RECV_QUEUE_MIN_LEN: 16                  # Minimum length of the 'tm' receive queue for motr, default is 2
-   S3_MOTR_MAX_RPC_MSG_SIZE: 262144                   # Maximum rpc message size for motr, default is 131072 (128k)
+   S3_MOTR_MAX_RPC_MSG_SIZE: 524288                   # Maximum rpc message size for motr, default is 131072 (128k)
    S3_MOTR_PROCESS_FID: <0x7200000000000000:0>        # FID of the Resource manager for Motr
    S3_MOTR_IDX_SERVICE_ID: 1                          # Types of index services supported by Motr, mapping is: 0->Mock KVS, 1->Motr KVS, 2->Cassandra KVS, default is 2 (Cassandra KVS)
    S3_MOTR_CASS_CLUSTER_EP: 127.0.0.1                 # Cassandra cluster end point
@@ -107,3 +110,5 @@ S3_THIRDPARTY_CONFIG:
    S3_LIBEVENT_POOL_RESERVE_SIZE: 134217728             # 128MB, deny PUT request if mempool free space is less than the mentioned size in bytes
    S3_LIBEVENT_MEMPOOL_ZERO_BUFFER: false               # Enable Libevent Mempool 'zeroing' after use (like secure erase) - disabled by default
    S3_LIBEVENT_POOL_RESERVE_PERCENT: 5                  # 5%, deny PUT request if mempool free space in percent is less than the mentioned percent
+S3_VERSION_CONFIG:
+   VERSION: 1

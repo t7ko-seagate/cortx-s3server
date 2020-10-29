@@ -63,4 +63,16 @@ public interface AccessKeyDAO {
      * modify the access key details.
      */
     public void update(AccessKey accessKey, String newStatus) throws DataAccessException;
+
+     /*
+      * Get all permanent access keys belonging to the user.
+      */
+    public
+     AccessKey[] findAllPermanent(User user) throws DataAccessException;
+     /*
+      * Deletes all expired and inactive keys
+      */
+    public
+     void deleteExpiredKeys(User user) throws DataAccessException;
 }
+

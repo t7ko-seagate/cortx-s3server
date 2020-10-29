@@ -31,6 +31,41 @@ from aclvalidation import AclTest
 # Config.request_timeout = 300 * 1000
 # Config.socket_timeout = 300 * 1000
 
+# Transform AWS CLI text output into an object(dictionary)
+# with content:
+# {
+#   "prefix":<list of common prefix>,
+#   "keys": <list of regular keys>,
+#   "next_token": <token>
+# }
+def get_aws_cli_object(raw_aws_cli_output):
+    cli_obj = {}
+    raw_lines = raw_aws_cli_output.split('\n')
+    common_prefixes = []
+    content_keys = []
+    for _, item in enumerate(raw_lines):
+        if (item.startswith("COMMONPREFIXES")):
+            # E.g. COMMONPREFIXES  quax/
+            line = item.split('\t')
+            common_prefixes.append(line[1])
+        elif (item.startswith("CONTENTS")):
+            # E.g. CONTENTS\t"98b5e3f766f63787ea1ddc35319cedf7"\tasdf\t2020-09-25T11:42:54.000Z\t3072\tSTANDARD
+            line = item.split('\t')
+            content_keys.append(line[2])
+        elif (item.startswith("NEXTTOKEN")):
+            # E.g. NEXTTOKEN       eyJDb250aW51YXRpb25Ub2tlbiI6IG51bGwsICJib3RvX3RydW5jYXRlX2Ftb3VudCI6IDN9
+            line = item.split('\t')
+            cli_obj["next_token"] = line[1]
+        else:
+            continue
+
+    if (common_prefixes is not None):
+        cli_obj["prefix"] = common_prefixes
+    if (content_keys is not None):
+        cli_obj["keys"] = content_keys
+
+    return cli_obj
+
 # Extract the upload id from response which has the following format
 # [bucketname    objecctname    uploadid]
 
@@ -98,6 +133,218 @@ AwsTest('Aws can get object with the same content-type').get_object("seagatebuck
 
 AwsTest('Aws can delete object').delete_object("seagatebucket", "3kfile")\
     .execute_test().command_is_successful()
+
+#*********** Verify aws s3api list-objects-v2 ***********
+# Setup objects in bucket
+obj_list = ['asdf', 'quax/t3/key.log', 'foo', 'quax/t1/key.log', 'boo', 'zoo/p2/key.log', 'zoo/p7/key.log']
+# Create above objects in existing bucket 'seagatebucket'
+for x in obj_list:
+    AwsTest(('Aws upload object:%s' % x)).put_object("seagatebucket", "1kfile", 1000, key_name=x)\
+        .execute_test().command_is_successful()
+
+# Start Listing objects using V2 scheme
+# Test #1: List objects using --start-after, --max-items and --starting-token
+list_v2_options = {"start-after":"boo", "max-items":2}
+result = AwsTest('Aws list-objects-v2: start-after and max-items').list_objects_v2("seagatebucket", **list_v2_options)\
+    .execute_test().command_is_successful().command_response_should_have("quax/t1/key.log")\
+    .command_response_should_have("foo")
+
+# Process result set
+lv2_response = get_aws_cli_object(result.status.stdout)
+# Get next-token from lv2_response
+if ("next_token" in lv2_response.keys()):
+    Next_token = lv2_response["next_token"]
+
+# Get keys from lv2_response
+obj_keys =  lv2_response["keys"]
+
+# Assert for key existence in response
+assert "foo" in obj_keys, "Key \"foo\" is expected to be in the result"
+assert "quax/t1/key.log" in obj_keys, "Key \"quax/t1/key.log\" is expected to be in the result"
+# Assert for key non-existence in response
+# key 'boo' and other keys (from key 'quax/t3/key.log' onwards) should not be in the response
+assert "boo" not in obj_keys, "Key \"boo\" should not be in the result"
+# 'quax/t3/key.log' shouldn't be in response, as --max-items=2
+assert "quax/t3/key.log" not in obj_keys, "Key \"quax/t3/key.log\" should not be in the result due to pagination"
+
+assert Next_token is not None
+
+# Further list objects using --starting-token
+list_v2_options = {"starting-token":Next_token}
+result = AwsTest('Aws list-objects-v2: starting-token').list_objects_v2("seagatebucket", **list_v2_options)\
+    .execute_test().command_is_successful().command_response_should_not_have("NextToken")
+# Process result set
+lv2_response = get_aws_cli_object(result.status.stdout)
+# next_token should not be in 'lv2_response' at this point
+if ("next_token" in lv2_response.keys()):
+    Next_token = lv2_response["next_token"]
+else:
+    Next_token = None
+# Get keys from lv2_response
+obj_keys =  lv2_response["keys"]
+# next-token should be None
+assert (Next_token is None)
+assert len(obj_keys) == 5, ("Expected 5, Actual = %d") & (len(obj_keys))
+
+# Test #2: List objects using --delimiter
+# List objects using delimiter="/"
+list_v2_options = {"delimiter":"/"}
+result = AwsTest('Aws list objects using V2 scheme').list_objects_v2("seagatebucket", **list_v2_options)\
+    .execute_test().command_is_successful()
+# Verify contents of the test output
+lv2_response = get_aws_cli_object(result.status.stdout)
+assert len(lv2_response["prefix"]) == 2, (("Expecting common prefixes:{quax/, zoo/}\n. Actual:%s") % str((lv2_response["prefix"])))
+assert len(lv2_response["keys"]) == 3, (("Expecting keys:{asdf, boo, foo} in the output. Actual:%s") % str((lv2_response["keys"])))
+
+# Delete all objects created for list-objects-v2 test
+for x in obj_list:
+    AwsTest(('Aws delete object:%s' % x)).delete_object("seagatebucket", x)\
+        .execute_test().command_is_successful()
+
+
+# ********* Specific ListObject V2 hierarchical object key tests  **********
+# Create below hierarchical objects in bucket and list them in different ways
+# test/.uds/volumeGroupA/vol0...vol30
+# test/.uds/volumeGroupB/lun0...lun4
+# test/.uds/.metadata0 ... .metadata2
+# test/.uds/.backup/vol_backup/files0...files19
+# test/.uds/.backup/storage/diskgroup/.backup/2020-09/data/.files
+# .a1, .f1, .p1
+obj_list = []
+for x in range(31):
+    key = "test/.uds/volumeGroupA/vol%d" % (x)
+    AwsTest('Aws Upload object:%s' % key).put_object("seagatebucket", "1Kfile", 1000, key_name=key)\
+        .execute_test().command_is_successful()
+    obj_list.append(key)
+
+for x in range(5):
+    key = "test/.uds/volumeGroupB/lun%d" % (x)
+    AwsTest('Aws Upload object:%s' % key).put_object("seagatebucket", "1Kfile", 1000, key_name=key)\
+        .execute_test().command_is_successful()
+    obj_list.append(key)
+
+for x in range(3):
+    key = "test/.uds/.metadata%d" % (x)
+    AwsTest('Aws Upload object:%s' % key).put_object("seagatebucket", "1Kfile", 1000, key_name=key)\
+        .execute_test().command_is_successful()
+    obj_list.append(key)
+
+for x in range(20):
+    key = "test/.uds/.backup/vol_backup/files%d" % (x)
+    AwsTest('Aws Upload object:%s' % key).put_object("seagatebucket", "1Kfile", 1000, key_name=key)\
+        .execute_test().command_is_successful()
+    obj_list.append(key)
+# Long path
+key = "test/.uds/.backup/storage/diskgroup/.backup/2020-09/data/.files"
+AwsTest('Aws Upload object:%s' % key).put_object("seagatebucket", "1Kfile", 1000, key_name=key)\
+    .execute_test().command_is_successful()
+obj_list.append(key)
+
+keys = [".a1", ".f1", ".p1"]
+for key in keys:
+    AwsTest('Aws Upload object:%s' % key).put_object("seagatebucket", "1Kfile", 1000, key_name=key)\
+        .execute_test().command_is_successful()
+    obj_list.append(key)
+
+# Listing#1: aws s3api list-objects --bucket cortx --delimiter "/"
+# Expected output:
+# Common prefix should have ["test/"]
+# Contents/keys should have [".a1", ".f1", ".p1"]
+result = AwsTest('Aws List objects with hierarchical key paths, using delimiter:/')\
+    .list_objects_prefix_delimiter("seagatebucket", None, None, "/")\
+    .execute_test().command_is_successful()
+
+lv2_response = get_aws_cli_object(result.status.stdout)
+assert (len(lv2_response["prefix"]) == 1)
+common_prefix = lv2_response["prefix"]
+assert ("test/" in common_prefix), "Expected: \"test/\", Actual:%s" % str(common_prefix)
+assert len(lv2_response["keys"]) == 3, (("Expected:[.a1, .f1, .p1]. Actual:%s") % str((lv2_response["keys"])))
+assert all(item in lv2_response["keys"] for item in keys)
+
+# Listing#2: aws s3api list-objects --bucket cortx --prefix "test/.uds/" --delimiter "/"
+# Expected output:
+# Common prefix should have: [test/.uds/.backup/, test/.uds/volumeGroupA/, test/.uds/volumeGroupB/]
+# Contents/keys should have [test/.uds/.metadata1, test/.uds/.metadata2, test/.uds/.metadata3]
+result = AwsTest('Aws List objects with hierarchical key paths, using prefix:%s delimiter:/' % "test/.uds/")\
+    .list_objects_prefix_delimiter("seagatebucket", None, "test/.uds/", "/")\
+    .execute_test().command_is_successful()
+
+lv2_response = get_aws_cli_object(result.status.stdout)
+assert (len(lv2_response["prefix"]) == 3)
+common_prefix = ['test/.uds/.backup/', 'test/.uds/volumeGroupA/', 'test/.uds/volumeGroupB/']
+keys = ["test/.uds/.metadata0", "test/.uds/.metadata1", "test/.uds/.metadata2"]
+assert all(item in lv2_response["prefix"] for item in common_prefix)
+assert (len(lv2_response["keys"]) == 3)
+assert all(item in lv2_response["keys"] for item in keys)
+
+# Listing#3: aws s3api list-objects --bucket cortx --prefix "test/.uds/.backup"
+# Expected output:
+# Common prefix should be: []
+# Contents/keys should have [test/.uds/.backup/storage/diskgroup/.backup/2020-09/data/files, test/.uds/.backup/vol_backup/files{1..20}]
+result = AwsTest('Aws List objects with hierarchical key paths, using prefix:%s' % "test/.uds/.backup")\
+    .list_objects_prefix_delimiter("seagatebucket", None, "test/.uds/.backup", None)\
+    .execute_test().command_is_successful()
+
+lv2_response = get_aws_cli_object(result.status.stdout)
+common_prefix = lv2_response.get("prefix")
+if common_prefix is not None:
+    assert len(common_prefix) == 0
+
+assert (len(lv2_response["keys"]) == 21), "Expect 21 regular keys in the result, Actual = %d" % len(lv2_response["keys"])
+
+# Listing#4: aws s3api list-objects --bucket cortx --prefix "test/.uds/.backup/" --delimiter "/"
+# Expected output:
+# Common prefix should be: [test/.uds/.backup/storage/, test/.uds/.backup/vol_backup/]
+# Contents/keys should be []
+result = AwsTest('Aws List objects with hierarchical key paths, using prefix:%s, delimiter:/' % "test/.uds/.backup/")\
+    .list_objects_prefix_delimiter("seagatebucket", None, "test/.uds/.backup/", "/")\
+    .execute_test().command_is_successful()
+
+lv2_response = get_aws_cli_object(result.status.stdout)
+common_prefix = ["test/.uds/.backup/storage/", "test/.uds/.backup/vol_backup/"]
+assert (len(lv2_response["prefix"]) == 2)
+assert all(item in lv2_response["prefix"] for item in common_prefix)
+keys = lv2_response.get("keys")
+if keys is not None:
+    assert len(keys) == 0
+
+
+# Listing#4.1: aws s3api list-objects --bucket cortx --prefix "test/.uds/.backup" --delimiter "/"
+# Expected output:
+# Common prefix should be: [test/.uds/.backup/]
+# Contents/keys should be []
+result = AwsTest('Aws List objects with hierarchical key paths, using prefix:%s, delimiter:/' % "test/.uds/.backup")\
+    .list_objects_prefix_delimiter("seagatebucket", None, "test/.uds/.backup", "/")\
+    .execute_test().command_is_successful()
+
+lv2_response = get_aws_cli_object(result.status.stdout)
+common_prefix = ["test/.uds/.backup/"]
+assert (len(lv2_response["prefix"]) == 1)
+assert (common_prefix == lv2_response["prefix"])
+keys = lv2_response.get("keys")
+if keys is not None:
+    assert len(keys) == 0
+
+
+# Listing#5: aws s3api list-objects --bucket cortx --prefix "test/.uds/backup"
+# Expected output:
+# No keys or common prefix in result, as there i no key that starts with "test/.uds/backup"
+# Common prefix should be: []
+# Contents/keys should be []
+result = AwsTest('Aws List objects with hierarchical key paths, using prefix:%s' % "test/.uds/backup")\
+    .list_objects_prefix_delimiter("seagatebucket", None, "test/.uds/backup", None)\
+    .execute_test().command_is_successful()
+
+lv2_response = get_aws_cli_object(result.status.stdout)
+assert len(lv2_response["prefix"]) == 0
+assert len(lv2_response["keys"]) == 0
+
+# Delete all hierarchical objects created for list object hierarchical test
+for x in obj_list:
+    AwsTest(('Aws delete object:%s' % x)).delete_object("seagatebucket", x)\
+        .execute_test().command_is_successful()
+
+
 
 #******** Put Bucket Tag ********
 AwsTest('Aws can create bucket tag').put_bucket_tagging("seagatebucket", [{'Key': 'organization','Value': 'marketing'}])\

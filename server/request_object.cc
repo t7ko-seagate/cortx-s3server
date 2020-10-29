@@ -164,7 +164,7 @@ RequestObject::RequestObject(
     canonical_id = "123456789dummyCANONICALID";
     email = "abc@dummy.com";
   }
-
+  is_service_req_head = false;
   request_error = S3RequestError::None;
   client_read_timer_event = NULL;
   evhtp_obj.reset(evhtp_obj_ptr);
@@ -197,7 +197,7 @@ RequestObject::RequestObject(
       }
     }
   } else {
-    s3_log(S3_LOG_WARN, request_id, "s3 client disconnected state.\n");
+    s3_log(S3_LOG_INFO, request_id, "s3 client is disconnected.\n");
   }
 }
 
@@ -239,8 +239,8 @@ RequestObject::get_query_parameters() {
         in_query_params_copied = true;
       }
     } else {
-      s3_log(S3_LOG_WARN, request_id,
-             "s3 client disconnected state or ev_req(NULL).\n");
+      s3_log(S3_LOG_INFO, request_id,
+             "s3 client is either disconnected or ev_req(NULL).\n");
     }
   }
   return in_query_params_copy;
@@ -333,7 +333,7 @@ const char* RequestObject::c_get_full_encoded_path() {
       return ev_req->uri->path->full;
     }
   } else {
-    s3_log(S3_LOG_WARN, request_id, "s3 client disconnected state.\n");
+    s3_log(S3_LOG_INFO, request_id, "s3 client is disconnected.\n");
   }
   return NULL;
 }
@@ -360,8 +360,8 @@ std::map<std::string, std::string>& RequestObject::get_in_headers_copy() {
       evhtp_obj->http_kvs_for_each(ev_req->headers_in, consume_header, this);
       in_headers_copied = true;
     } else {
-      s3_log(S3_LOG_WARN, request_id,
-             "s3 client disconnected state or ev_req(NULL).\n");
+      s3_log(S3_LOG_INFO, request_id,
+             "s3 client is either disconnected or ev_req(NULL).\n");
     }
   }
   return in_headers_copy;
@@ -726,8 +726,10 @@ void RequestObject::notify_incoming_data(evbuf_t* buf) {
 }
 
 void RequestObject::send_response(int code, std::string body) {
-  s3_log(S3_LOG_INFO, request_id, "Response code: [%d]\n", code);
-  s3_log(S3_LOG_INFO, request_id, "Sending response as: [%s]\n", body.c_str());
+  if (!is_service_req_head) {
+    s3_log(S3_LOG_INFO, request_id, "Sending response as: [code:%d] [%s]\n",
+           code, body.c_str());
+  }
 
   http_status = code;
   turn_around_time.stop();
@@ -736,14 +738,14 @@ void RequestObject::send_response(int code, std::string body) {
     s3_stats_inc("internal_error_count");
   }
   if (!client_connected()) {
-    s3_log(S3_LOG_WARN, request_id, "s3 client disconnected state.\n");
+    s3_log(S3_LOG_INFO, request_id, "s3 client is disconnected.\n");
     request_timer.stop();
     return;
   }
   // If body not empty, write to response body.
   if (!body.empty()) {
     evbuffer_add(ev_req->buffer_out, body.c_str(), body.length());
-    bytes_sent = evbuffer_get_length(ev_req->buffer_out);
+
   } else if (out_headers_copy.find("Content-Length") ==
              out_headers_copy.end()) {  // Content-Length was already set for
                                         // this request, which could be. case
@@ -854,7 +856,7 @@ void RequestObject::respond_error(
     send_response(error.get_http_status_code(), response_xml);
   } else {
     request_timer.stop();
-    s3_log(S3_LOG_WARN, request_id, "s3 client disconnected state.\n");
+    s3_log(S3_LOG_INFO, request_id, "s3 client is disconnected.\n");
   }
 }
 

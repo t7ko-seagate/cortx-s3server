@@ -1,5 +1,5 @@
 # CORTX-S3 Server Quick Start Guide
-This guide provides a step-by-step walkthrough for getting you CORTX-S3 Server-ready.
+This guide provides a step-by-step walkthrough for getting you CORTX-S3 Server ready.
 
 - [1.0 Prerequisites](#10-Prerequisites)
 - [1.1 Clone the CORTX-S3 Server Repository](#11-Clone-the-CORTX-S3-Server-Repository)
@@ -15,13 +15,13 @@ This guide provides a step-by-step walkthrough for getting you CORTX-S3 Server-r
 <summary>Click to expand!</summary>
 <p>
 
-1. You'll need to set up SSC, Cloud VM, or a local VM on VMWare Fusion or Oracle VirtualBox. To know more, refer to the [LocalVMSetup](https://github.com/Seagate/cortx/blob/main/doc/LocalVMSetup.md) section.
+1. You'll need to set up SSC, Cloud VM, or a local VM on VMWare Fusion or Oracle VirtualBox.
 2. As a CORTX contributor you will need to refer, clone, contribute, and commit changes via the GitHub server. You can access the latest code via [Github](https://github.com/Seagate/cortx).
 3. You'll need a valid GitHub Account.
 4. Before you clone your Git repository, you'll need to create the following:
     1. Follow the link to generate the [SSH Public Key](https://git-scm.com/book/en/v2/Git-on-the-Server-Generating-Your-SSH-Public-Key).
-    2. Add the newly created SSH Public Key to [Github](https://github.com/settings/keys) and [Enable SSO](https://docs.github.com/en/github/authenticating-to-github/authorizing-an-ssh-key-for-use-with-saml-single-sign-on).
-    3. When you clone your Github repository, you'll be prompted to enter your GitHub Username and Password. Refer to the article to [Generate Personal Access Token or PAT](https://docs.github.com/en/github/authenticating-to-github/creating-a-personal-access-token). Once you generate your Personal Access Token, enable SSO.
+    2. Add the newly created SSH Public Key to [Github](https://github.com/settings/keys).
+    3. When you clone your Github repository, you'll be prompted to enter your GitHub Username and Password. Refer to the article to [Generate Personal Access Token or PAT](https://docs.github.com/en/github/authenticating-to-github/creating-a-personal-access-token).
     4. Copy your newly generated [PAT](https://github.com/settings/tokens) and enter it when prompted.
 
        :page_with_curl: **Note:** From this point onwards, you'll need to execute all steps logged in as a **Root User**.
@@ -45,7 +45,7 @@ This guide provides a step-by-step walkthrough for getting you CORTX-S3 Server-r
             * If epel was installed, you'll see it in the output list.
             * You might also see exclamation mark in front of the repositories id. Refer to the [Redhat Knowledge Base](https://access.redhat.com/solutions/2267871).
         * `$ yum install -y epel-release`
-    * Verify if kernel-devel-3.10.0-1062 version package is installed, using: `$ uname -r`
+    * Verify if kernel version is 3.10.0-1062 (for centos-7.7) or 3.10.0-1127 (for centos-7.8), using: `$ uname -r`
 
 7. You'll need to disable selinux and firewall. Run the following commands:
 
@@ -57,7 +57,7 @@ This guide provides a step-by-step walkthrough for getting you CORTX-S3 Server-r
 
      `$ setenforce 0` - you'll get a `setenforce: SELinux is disabled` status.
 
-     `$ sed 's/SELINUX=enforcing/SELINUX=disabled/' /etc/sysconfig/selinux` - you'll get a `SELINUX=disabled` status.
+     `$ sed -i 's/SELINUX=enforcing/SELINUX=disabled/' /etc/selinux/config` - you'll get a `SELINUX=disabled` status.
 
      Run `$ shutdown -r now` - to reboot your system.
      
@@ -156,14 +156,14 @@ The image below illustrates the output log of a system test that is successful.
 
 Before your test your build, ensure that you have installed and configured the following:
 
-1. Make sure you have installed `easy_install`
-    * To check if you have `easy_install`, run the command: `$ easy_install --version`
-    * To install `easy_install`, run the command: `$ yum install python-setuptools python-setuptools-devel`
-2. Ensure you've installed `pip`
-    * To check if you have pip installed, run the command: `$ pip --version`
-    * To install pip, run the command: `$ python --version`
-3. If you don't have Python Version 2.6.5+, then install Python using: `$ python3 --version`
-    *  If you don't have Python Version 3.3, then install python3 using: `$ easy_install pip`
+1. Make sure you have installed easy_install.
+    - To check if you have easy_install, run the command: `$ easy_install --version`
+    - To install easy_install, run the command: `$ yum install python-setuptools python-setuptools-devel`
+2. Ensure you've installed pip.
+    - To check if you have pip installed, run the command: `$ pip --version`
+    - To install pip, run the command: `$ easy_install pip`
+3. If you don't have Python Version 2.6.5+, install Python using: `$ yum install python26`
+    - If you don't have Python Version 3.3, then install python3 using: `$ yum install python3`
 4. Ensure that CORTX-S3 Server and its dependent services are running.
     1. To start CORTX-S3 Server and its dependent services, run the command: `$ ./jenkins-build.sh --skip_build --skip_tests`
     2. To view the `PID` of the active S3 service, run the command: `$ pgrep s3`
@@ -252,7 +252,7 @@ Run the following test cases to check if your AWS S3 Server build is working cor
 
 7. To Remove Bucket, use:
 
-    `$ aws s3 rb s3://seagatebuckettest`
+    `$ aws s3 rb s3://seagatebucket`
 
 ### 1.5 Test a Specific MOTR Version using CORX-S3 Server
 
@@ -319,11 +319,8 @@ We thank you for stopping by to check out the CORTX Community. We are fully dedi
 
 Please contribute to the [CORTX Open Source project](https://github.com/Seagate/cortx/blob/main/doc/SuggestedContributions.md) and join our movement to make data storage better, efficient, and more accessible.
 
-Refer to our [CORTX Community Guide](https://github.com/Seagate/cortx/blob/main/doc/CORTXContributionGuide.md) to get started with your first contribution.
+Refer to our [CORTX Contribution Guide](https://github.com/Seagate/cortx/blob/main/CONTRIBUTING.md) to get started with your first contribution.
 
 ### Reach Out to Us
 
-You can reach out to us with your questions, feedback, and comments through our CORTX Communication Channels:
-
-- Join our CORTX-Open Source Slack Channel to interact with your fellow community members and gets your questions answered. [![Slack Channel](https://img.shields.io/badge/chat-on%20Slack-blue)](https://join.slack.com/t/cortxcommunity/shared_invite/zt-femhm3zm-yiCs5V9NBxh89a_709FFXQ?)
-- If you'd like to contact us directly, drop us a mail at cortx-questions@seagate.com.
+Please refer to the [Support](../SUPPORT.md) section to reach out to us with your questions, contributions, and feedback.

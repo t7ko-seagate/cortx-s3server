@@ -25,17 +25,30 @@ import shutil
 import logging
 import yaml
 
+from s3backgrounddelete.cortx_cluster_config import CipherInvalidToken
+
+try:
+    from s3backgrounddelete.cortx_s3_cipher import CortxS3Cipher
+except (ModuleNotFoundError, ImportError):
+    # Cort-utils will not be installed in dev VM's
+    pass
 
 class CORTXS3Config(object):
     """Configuration for s3 background delete."""
     _config = None
     _conf_file = None
 
-    def __init__(self, s3recovery_flag = False):
+    def __init__(self, s3recovery_flag = False, use_cipher = True):
         """Initialise logger and configuration."""
         self.logger = logging.getLogger(__name__ + "CORTXS3Config")
         self.s3recovery_flag = s3recovery_flag
+        self.s3bdg_access_key = None
+        self.s3bgd_secret_key = None
+        self.recovery_access_key = None
+        self.recovery_secret_key = None
         self._load_and_fetch_config()
+        if use_cipher:
+            self.cache_credentials()
 
     @staticmethod
     def get_conf_dir():
@@ -67,8 +80,45 @@ class CORTXS3Config(object):
         with open(self._conf_file, 'r') as file_config:
             self._config = yaml.safe_load(file_config)
 
+    def generate_key(self, config, use_base64, key_len, const_key):
+        s3cipher = CortxS3Cipher(config, use_base64, key_len, const_key)
+        return s3cipher.get_key()
+
+    def cache_credentials(self):
+        try:
+            self.s3bdg_access_key = self.generate_key(None, True, 22, "s3backgroundaccesskey")
+        except CipherInvalidToken as err:
+            self.s3bdg_access_key = None
+            self.logger.info("S3cipher failed due to "+ str(err) +". Using credentails from config file")
+
+        try:
+            self.s3bgd_secret_key = self.generate_key(None, False, 40, "s3backgroundsecretkey")
+        except CipherInvalidToken as err:
+            self.s3bgd_secret_key = None
+            self.logger.info("S3cipher failed due to "+ str(err) +". Using credentails from config file")
+
+        try:
+            self.recovery_access_key = self.generate_key(None, True, 22, "s3recoveryaccesskey")
+        except CipherInvalidToken as err:
+            self.recovery_access_key = None
+            self.logger.info("S3cipher failed due to "+ str(err) +". Using credentails from config file")
+
+        try:
+            self.recovery_secret_key = self.generate_key(None, False, 40, "s3recoverysecretkey")
+        except CipherInvalidToken as err:
+            self.recovery_secret_key = None
+            self.logger.info("S3cipher failed due to "+ str(err) +". Using credentails from config file")
+
+
     def get_s3recovery_flag(self):
         return self.s3recovery_flag
+
+    def get_config_version(self):
+        """Return version of S3 background delete config file or KeyError."""
+        if 'version_config' in self._config and self._config['version_config']['version']:
+            return self._config['version_config']['version']
+        else:
+            raise KeyError("Could not parse version from config file " + self._conf_file)
 
     def get_logger_directory(self):
         """Return logger directory path for background delete from config file or KeyError."""
@@ -170,7 +220,10 @@ class CORTXS3Config(object):
                 self._conf_file)
 
     def get_cortx_s3_access_key(self):
-        """Return access_key from config file or KeyError."""
+        """Return access_key cipher or config file or KeyError."""
+        if self.s3bdg_access_key:
+            return self.s3bdg_access_key
+
         if 'cortx_s3' in self._config and self._config['cortx_s3']['background_account_access_key']:
             return self._config['cortx_s3']['background_account_access_key']
         else:
@@ -179,7 +232,10 @@ class CORTXS3Config(object):
                 self._conf_file)
 
     def get_cortx_s3_secret_key(self):
-        """Return secret_key from config file or KeyError."""
+        """Return secret_key from cipher or config file or KeyError."""
+        if self.s3bgd_secret_key:
+            return self.s3bgd_secret_key
+
         if 'cortx_s3' in self._config and self._config['cortx_s3']['background_account_secret_key']:
             return self._config['cortx_s3']['background_account_secret_key']
         else:
@@ -364,7 +420,10 @@ class CORTXS3Config(object):
                 self._conf_file)
 
     def get_s3_recovery_access_key(self):
-        """Return access_key from config file or KeyError."""
+        """Return access_key from cipher or config file or KeyError."""
+        if self.recovery_access_key:
+            return self.recovery_access_key
+
         if 's3_recovery' in self._config and self._config['s3_recovery']['recovery_account_access_key']:
             return self._config['s3_recovery']['recovery_account_access_key']
         else:
@@ -373,7 +432,10 @@ class CORTXS3Config(object):
                 self._conf_file)
 
     def get_s3_recovery_secret_key(self):
-        """Return secret_key from config file or KeyError."""
+        """Return secret_key from cipher or config file or KeyError."""
+        if self.recovery_secret_key:
+            return self.recovery_secret_key
+
         if 's3_recovery' in self._config and self._config['s3_recovery']['recovery_account_secret_key']:
             return self._config['s3_recovery']['recovery_account_secret_key']
         else:

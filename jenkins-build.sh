@@ -26,28 +26,65 @@ USAGE="USAGE: bash $(basename "$0") [--use_http_client | --s3server_enable_ssl ]
                                     [--local_redis_restart]
                                     [--callgraph /path/to/output/file]
                                     [--ldap_admin_pwd]
+                                    [--generate_support_bundle]
+                                    [--job_id]
+                                    [--gid]
                                     [--help | -h]
 
 where:
 --use_http_client        Use HTTP client for ST's. Default is use HTTPS client.
+
 --s3server_enable_ssl    Use ssl for s3server, by default its disabled
---use_ipv6	   Use ipv6 for ST's
---skip_build	   Do not run build step
---skip_tests	   Do not run tests, exit before test run
---cleanup_only	   Do cleanup and stop everything; don't run anything.
---fake_obj	   Run s3server with stubs for motr object read/write ops
---fake_kvs	   Run s3server with stubs for motr kvs put/get/delete
-		   create idx/remove idx
---redis_kvs	   Run s3server with redis stubs for motr kvs put/get/delete
-		   create idx/remove idx
---basic_test_only	   Do not run all the tests. Only basic s3cmd regression
-		   tests will be run. If --fake* params provided, tests will use
-		   zero filled objects
---local_redis_restart	   In case redis server installed on local machine this option restarts redis-server
---callgraph /path/to/output/file	   Generate valgrind call graph; Especially usefull
-		   together with --basic_test_only option
---ldap_admin_pwd   LDAP admin password (optional). If not specified, script will use password set in 
-       file '/root/.s3_ldap_cred_cache.conf'
+
+--use_ipv6               Use ipv6 for ST's
+
+--skip_build             Do not run build step
+
+--skip_tests             Do not run tests, exit before test run
+
+--cleanup_only           Do cleanup and stop everything; don't run anything.
+
+--fake_obj               Run s3server with stubs for motr object read/write ops
+
+--fake_kvs               Run s3server with stubs for motr kvs put/get/delete
+                         create idx/remove idx
+
+--redis_kvs              Run s3server with redis stubs for motr kvs put/get/delete
+                         create idx/remove idx
+
+--basic_test_only        Do not run all the tests. Only basic s3cmd regression
+                         tests will be run. If --fake* params provided, tests will use
+                         zero filled objects
+
+--local_redis_restart    In case redis server installed on local machine this option restarts redis-server
+
+--callgraph              Generate valgrind call graph; Especially usefull
+                         together with --basic_test_only option
+
+                         Value: /path/to/output/file
+
+--ldap_admin_pwd         LDAP admin password. If not specified, script will use password set in
+                         file '/root/.s3_ldap_cred_cache.conf'
+
+                         Value: string
+
+--generate_support_bundle If specified, the 's3_bundle_generate.sh' script will be called at the end
+                          of jenkins build, to save s3server logs at the given loction.
+
+                          Value: String - absolute-path/where/logs/will/be/saved
+
+--job_id                  The 'Cortx-PR-Build' pipeline jenkins job id. Specifiy this option
+                          along with '--generate_support_bundle' option. The job_id value will
+                          be used to create log directory name.
+
+                          Value: Int
+
+--gid                     The global id of the user, who has initiated the jenkins job.
+                          Specifiy this option along with '--generate_support_bundle' option.
+                          The job_id value will be used to create log directory name.
+
+                          Value: Int
+
 --help (-h)        Display help"
 
 use_http_client=0
@@ -64,8 +101,11 @@ basic_test_only=0
 callgraph_cmd=""
 local_redis_restart=0
 ldap_admin_pwd=
+generate_support_bundle=
+job_id=0
+gid=0
+ansible=0
 
-source /root/.s3_ldap_cred_cache.conf
 
 if [ $# -eq 0 ]
 then
@@ -142,9 +182,26 @@ else
                               ldap_admin_pwd=$1;
                           fi
                           ;;
+       --generate_support_bundle ) shift;
+                                   if [ ! -z "$1" ]; then
+                                      generate_support_bundle=$1;
+                                   fi
+                                   ;;
+       --job_id ) shift;
+                  if [ ! -z "$1" ]; then
+                      job_id=$1;
+                  fi
+                  ;;
+       --gid ) shift;
+               if [ ! -z "$1" ]; then
+                  gid=$1;
+               fi
+               ;;
       --local_redis_restart ) echo "redis-server will be restarted";
                               local_redis_restart=1;
                               ;;
+      --automate_ansible ) ansible=1;
+                           ;;
       --help | -h )
           echo "$USAGE"
           exit 1
@@ -160,11 +217,20 @@ else
 fi
 set -xe
 
+S3_BUILD_DIR=`pwd`
+ANSIBLE_DIR=$S3_BUILD_DIR/scripts/env/dev
+
 USE_SUDO=
 if [[ $EUID -ne 0 ]]; then
   command -v sudo || (echo "Script should be run as root or sudo required." && exit 1)
   USE_SUDO=sudo
 fi
+
+if [[ $ansible -eq 1 ]]; then
+   sh $ANSIBLE_DIR/init.sh -s
+fi
+
+source /root/.s3_ldap_cred_cache.conf
 
 if [ "$callgraph_cmd" != "" ]
 then
@@ -176,7 +242,6 @@ echo $PATH
 
 #git clone --recursive https://github.com/Seagate/cortx-s3server.git
 
-S3_BUILD_DIR=`pwd`
 
 ulimit -c unlimited
 
@@ -408,11 +473,14 @@ then
   $USE_SUDO sed -i 's/^\(\s*server\s\+s3-instance.* check\).*$/\1/g' /etc/haproxy/haproxy.cfg
 fi
 
-# Dump last log lines for easy lookup in jenkins
-tail -50 /var/log/seagate/s3/s3server.INFO
-
 # To debug if there are any errors
 tail -50 /var/log/seagate/s3/s3server.ERROR || echo "No Errors"
+
+# jenkins pipeline to give this argument.
+if [ ! -z "$generate_support_bundle" ]
+then
+  /opt/seagate/cortx/s3/scripts/s3_bundle_generate.sh "$gid-$job_id" "$generate_support_bundle"
+fi
 
 cd $MOTR_SRC
 $USE_SUDO ./m0t1fs/../motr/st/utils/motr_services.sh stop || echo "Cannot stop motr services"

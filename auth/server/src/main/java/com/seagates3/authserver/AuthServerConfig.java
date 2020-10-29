@@ -20,10 +20,12 @@
 
 package com.seagates3.authserver;
 
+import java.io.BufferedReader;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.lang.management.ManagementFactory;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -66,12 +68,13 @@ public class AuthServerConfig {
      * Read the properties file.
      * @throws GeneralSecurityException
      */
-    public static void readConfig(String resourceDir)
-                       throws FileNotFoundException, IOException,
-                                  GeneralSecurityException, Exception {
+    public
+     static void readConfig(String resourceDir, String authServerFile,
+                            String keyStoreFile) throws FileNotFoundException,
+         IOException, GeneralSecurityException, Exception {
         authResourceDir = resourceDir;
-        Path authProperties = Paths.get(authResourceDir, "authserver.properties");
-        Path authSecureProperties = Paths.get(authResourceDir, "keystore.properties");
+        Path authProperties = Paths.get(authResourceDir, authServerFile);
+        Path authSecureProperties = Paths.get(authResourceDir, keyStoreFile);
         Properties authServerConfig = new Properties();
         InputStream input = new FileInputStream(authProperties.toString());
         authServerConfig.load(input);
@@ -131,19 +134,41 @@ public class AuthServerConfig {
      * @throws GeneralSecurityException
      */
     public static void loadCredentials() throws GeneralSecurityException, Exception {
-
-        Properties authServerConfig = AuthServerConfig.authServerConfig;
-        String encryptedPasswd = authServerConfig.getProperty("ldapLoginPW");
-        Path keyStoreFilePath = getKeyStorePath();
-        PrivateKey privateKey = JKSUtil.getPrivateKeyFromJKS(
-                                keyStoreFilePath.toString(), getCertAlias(),
-                                getKeyStorePassword());
-        if (privateKey == null) {
-             throw new GeneralSecurityException("Failed to find Private Key ["
-                + keyStoreFilePath + "].");
-        }
-        ldapPasswd = RSAEncryptDecryptUtil.decrypt(encryptedPasswd,
-                     privateKey);
+       logger = LoggerFactory.getLogger(AuthServerConfig.class.getName());
+       logger.debug("Loading Openldap credentials");
+       String keystorePasswd = null;
+       String encryptedPasswd = authServerConfig.getProperty("ldapLoginPW");
+       Path keyStoreFilePath = getKeyStorePath();
+       try {
+         String cmd = authServerConfig.getProperty("s3CipherUtil");
+         Process s3Cipher = Runtime.getRuntime().exec(cmd);
+         int exitVal = s3Cipher.waitFor();
+         if (exitVal != 0) {
+           logger.debug("S3 Cipher util failed to return keystore password");
+           throw new IOException("S3 cipher util exited with error.");
+         }
+         BufferedReader reader = new BufferedReader(
+             new InputStreamReader(s3Cipher.getInputStream()));
+         String line = reader.readLine();
+         if (line == null || line.isEmpty()) {
+           throw new IOException("S3 cipher returned empty stream.");
+         } else {
+           keystorePasswd = line;
+         }
+       }
+       catch (Exception e) {
+         logger.debug(
+             e.getMessage() +
+             " IO error in S3 cipher. Loading default keystore credentilas.");
+         keystorePasswd = getKeyStorePassword();
+       }
+       PrivateKey privateKey = JKSUtil.getPrivateKeyFromJKS(
+           keyStoreFilePath.toString(), getCertAlias(), keystorePasswd);
+       if (privateKey == null) {
+         throw new GeneralSecurityException("Failed to find Private Key [" +
+                                            keyStoreFilePath + "].");
+       }
+       ldapPasswd = RSAEncryptDecryptUtil.decrypt(encryptedPasswd, privateKey);
     }
 
     /**
@@ -342,4 +367,10 @@ public class AuthServerConfig {
       }
       return internalAccountsList;
     }
+
+   public
+    int getVersion() {
+      return Integer.parseInt(authServerConfig.getProperty("version"));
+    }
 }
+

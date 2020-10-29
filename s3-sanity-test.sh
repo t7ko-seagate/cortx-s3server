@@ -20,7 +20,6 @@
 
 
 set -e
-set -x
 
 
 #########################
@@ -43,6 +42,9 @@ else
     exit 0
 fi
 
+test_file_input=/tmp/SanityObjectToDeleteAfterUse.input
+test_output_file=/tmp/SanityObjectToDeleteAfterUse.out
+
 ldappasswd=""
 if rpm -q "salt"  > /dev/null;
 then
@@ -58,11 +60,13 @@ then
     ldappasswd=$ldap_admin_pwd
 fi
 
-USAGE="USAGE: bash $(basename "$0") [--help]
+USAGE="USAGE: bash $(basename "$0")
 Run S3 sanity test.
 where:
-    --help      display this help and exit
-    --clean     clean s3 resources if present
+    -h     display this help and exit
+    -c     clean s3 resources if present
+    -e     specify the s3 server endpoint, pass 127.0.0.1 if running on s3 server node
+           else provide data interface ip which needs to be in /etc/hosts
 
 Operations performed:
   * Create Account
@@ -74,51 +78,89 @@ Operations performed:
   * Delete User
   * Delete Account"
 
-cleanup() {
+update_config() {
 
-    if [ "$externalcleanup" = true ]
-    then
-        output=$(s3iamcli resetaccountaccesskey -n SanityAccountToDeleteAfterUse --ldapuser sgiamadmin --ldappasswd "$ldappasswd")
-        echo $output
-        access_key=$(echo -e "$output" | tr ',' '\n' | grep "AccessKeyId" | awk '{print $3}')
-        secret_key=$(echo -e "$output" | tr ',' '\n' | grep "SecretKey" | awk '{print $3}')
-        TEST_CMD="s3cmd --access_key=$access_key --secret_key=$secret_key"
-    fi
+   if [ ! -z $end_point ];then
+     s3iamcli listaccounts --ldapuser sgiamadmin --ldappasswd "$ldappasswd" >/dev/null 2>&1 || echo "configured s3iamcli"
+     echo "using s3endpoint $end_point"
+     ls /root/.sgs3iamcli/config.yaml 2> /dev/null || { echo "S3iamcli configuration file is missing" && exit 1; }
+     ls /root/.s3cfg 2> /dev/null || { echo "S3cmd configuration file is missing" && exit 1; }
+     sed -i "s/IAM:.*/IAM: http:\/\/$end_point:9080/g" /root/.sgs3iamcli/config.yaml
+     sed -i "s/IAM_HTTPS:.*/IAM_HTTPS: https:\/\/$end_point:9443/g" /root/.sgs3iamcli/config.yaml
+     sed -i "s/VERIFY_SSL_CERT:.*/VERIFY_SSL_CERT: false/g" /root/.sgs3iamcli/config.yaml
+     sed -i "s/host_base =.*/host_base = $end_point/g" /root/.s3cfg
+   fi
 
-    $TEST_CMD del "s3://sanitybucket/SanityObjectToDeleteAfterUse" || echo "Failed"
-    $TEST_CMD rb "s3://sanitybucket" || echo "Failed"
-    s3iamcli deleteuser -n SanityUserToDeleteAfterUse --access_key $access_key --secret_key $secret_key || echo "Failed"
-    s3iamcli deleteaccount -n SanityAccountToDeleteAfterUse --access_key $access_key --secret_key $secret_key || echo "Failed"
-    rm -f $test_file_input $test_output_file || echo "failed"
-    exit 0
 }
 
-case "$1" in
-    --help )
-        echo "$USAGE"
-        exit 0
-        ;;
-    --clean )
-        echo "start clean up"
-        externalcleanup=true
-        cleanup
-        ;;
+restore_config() {
+   ls /root/.sgs3iamcli/config.yaml 2> /dev/null || { echo "S3iamcli configuration file is missing" && exit 1; }
+   ls /root/.s3cfg 2> /dev/null || { echo "S3cmd configuration file is missing" && exit 1; }
+   rm -rf /root/.sgs3iamcli
+   sed -i "s/host_base =.*/host_base = s3.seagate.com/g" /root/.s3cfg
+}
 
-esac
+cleanup() {
+   update_config
+   output=$(s3iamcli resetaccountaccesskey -n SanityAccountToDeleteAfterUse --ldapuser sgiamadmin --ldappasswd "$ldappasswd") 2> /dev/null || echo ""
+   if [[ $output == *"Name or service not known"*  || $output == *"Invalid argument"* ]]
+   then
+       echo "Provide the Appropriate endpoint"
+       restore_config
+       exit 0
+   elif [[ $output == *"NoSuchEntity"* ]]
+   then
+      echo "Sanity Account doesn't exist for cleanup"
+      return;
+   else
+      access_key=$(echo -e "$output" | tr ',' '\n' | grep "AccessKeyId" | awk '{print $3}')
+      secret_key=$(echo -e "$output" | tr ',' '\n' | grep "SecretKey" | awk '{print $3}')
+      TEST_CMD="s3cmd --access_key=$access_key --secret_key=$secret_key"
+      $TEST_CMD del "s3://sanitybucket/SanityObjectToDeleteAfterUse" >/dev/null 2>&1 || echo ""
+      $TEST_CMD rb "s3://sanitybucket" >/dev/null 2>&1 || echo ""
+      s3iamcli deleteuser -n SanityUserToDeleteAfterUse --access_key $access_key --secret_key $secret_key 2> /dev/null || echo ""
+      s3iamcli deleteaccount -n SanityAccountToDeleteAfterUse --access_key $access_key --secret_key $secret_key 2> /dev/null || echo ""
+      rm -f $test_file_input $test_output_file || echo ""
+   fi
+   restore_config
+}
+
+while getopts ":e:c" o; do
+    case "${o}" in
+        e)
+            end_point=${OPTARG}
+            ;;
+        c)
+            externalcleanup=true
+            ;;
+        *)
+            echo "$USAGE"
+            exit 0
+            ;;
+    esac
+done
+shift $((OPTIND-1))
 
 trap "cleanup" ERR
+
+if [ "$externalcleanup" = true ]
+then
+  cleanup
+  exit 0
+fi
+
+cleanup
+update_config
 
 echo -e "\n\n*** S3 Sanity ***"
 echo -e "\n\n**** Create Account *******"
 
-
 output=$(s3iamcli createaccount -n SanityAccountToDeleteAfterUse  -e SanityAccountToDeleteAfterUse@sanitybucket.com --ldapuser sgiamadmin --ldappasswd "$ldappasswd")
 
-echo $output
 access_key=$(echo -e "$output" | tr ',' '\n' | grep "AccessKeyId" | awk '{print $3}')
 secret_key=$(echo -e "$output" | tr ',' '\n' | grep "SecretKey" | awk '{print $3}')
 
-s3iamcli CreateUser -n SanityUserToDeleteAfterUse --access_key $access_key --secret_key $secret_key
+s3iamcli CreateUser -n SanityUserToDeleteAfterUse --access_key $access_key --secret_key $secret_key 2> /dev/null
 
 TEST_CMD="s3cmd --access_key=$access_key --secret_key=$secret_key"
 
@@ -126,9 +168,6 @@ echo -e "\nCreate bucket - 'sanitybucket': "
 $TEST_CMD mb "s3://sanitybucket"
 
 # create a test file
-test_file_input=/tmp/SanityObjectToDeleteAfterUse.input
-test_output_file=/tmp/SanityObjectToDeleteAfterUse.out
-
 dd if=/dev/urandom of=$test_file_input bs=5MB count=1
 content_md5_before=$(md5sum $test_file_input | cut -d ' ' -f 1)
 
@@ -152,7 +191,7 @@ echo -e "\nDelete bucket - 'sanitybucket': "
 $TEST_CMD rb "s3://sanitybucket"
 
 echo -e "\nDelete User - 'SanityUserToDeleteAfterUse': "
-s3iamcli deleteuser -n SanityUserToDeleteAfterUse --access_key $access_key --secret_key $secret_key
+s3iamcli deleteuser -n SanityUserToDeleteAfterUse --access_key $access_key --secret_key $secret_key 2> /dev/null
 
 echo -e "\nDelete Account - 'SanityAccountToDeleteAfterUse': "
 s3iamcli deleteaccount -n SanityAccountToDeleteAfterUse --access_key $access_key --secret_key $secret_key
@@ -162,4 +201,5 @@ set +e
 # delete test files file
 rm -f $test_file_input $test_output_file
 
+restore_config
 echo -e "\n\n***** S3: SANITY TEST SUCCESSFULLY COMPLETED *****\n"

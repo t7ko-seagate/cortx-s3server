@@ -154,7 +154,7 @@ void S3PutObjectAction::validate_put_request() {
     send_response_to_s3_client();
   } else if (!request->is_header_present("Content-Length")) {
     // 'Content-Length' header is required and missing
-    s3_log(S3_LOG_INFO, request_id, "Missing Content-Length header");
+    s3_log(S3_LOG_ERROR, request_id, "Missing mandatory Content-Length header");
     set_s3_error("MissingContentLength");
     send_response_to_s3_client();
   } else {
@@ -555,7 +555,7 @@ void S3PutObjectAction::save_metadata() {
            s_md5_calc.c_str(), s_md5_got.c_str());
 
     if (s_md5_calc != s_md5_got) {
-      s3_log(S3_LOG_INFO, request_id, "Content MD5 mismatch\n");
+      s3_log(S3_LOG_ERROR, request_id, "Content MD5 mismatch\n");
       s3_put_action_state = S3PutObjectActionState::md5ValidationFailed;
 
       set_s3_error("BadDigest");
@@ -603,6 +603,9 @@ void S3PutObjectAction::save_object_metadata_failed() {
   if (new_object_metadata->get_state() ==
       S3ObjectMetadataState::failed_to_launch) {
     set_s3_error("ServiceUnavailable");
+  } else {
+    s3_log(S3_LOG_ERROR, request_id, "failed to save object metadata.");
+    set_s3_error("InternalError");
   }
   // Clean up will be done after response.
   send_response_to_s3_client();

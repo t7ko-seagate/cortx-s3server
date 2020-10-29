@@ -155,6 +155,8 @@ public class AccessKeyController extends AbstractController {
         LOGGER.info("Deleting access key");
         try {
             accessKeyDAO.delete(accessKey);
+            LOGGER.debug("Deleted accesskey for account - " +
+                         requestor.getAccount().getName());
         } catch (DataAccessException ex) {
             return accessKeyResponseGenerator.internalServerError();
         }
@@ -193,7 +195,7 @@ public class AccessKeyController extends AbstractController {
 
         AccessKey[] accessKeyList;
         try {
-            accessKeyList = accessKeyDAO.findAll(user);
+          accessKeyList = accessKeyDAO.findAllPermanent(user);
         } catch (DataAccessException ex) {
             LOGGER.error("Failed to fine access keys of user: "
                                                 + user.getName());
@@ -273,3 +275,4 @@ public class AccessKeyController extends AbstractController {
         return accessKeyResponseGenerator.generateUpdateResponse();
     }
 }
+

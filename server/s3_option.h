@@ -93,6 +93,7 @@ class S3Option {
   unsigned short s3_client_req_read_timeout_secs;
 
   std::string auth_ip_addr;
+  std::string s3_version;
   unsigned short auth_port;
 
   std::string s3_default_endpoint;
@@ -168,6 +169,9 @@ class S3Option {
   std::string redis_srv_addr;
   unsigned short redis_srv_port;
 
+  unsigned motr_etimedout_max_threshold;
+  unsigned motr_etimedout_window_sec;
+
   std::string s3_daemon_dir;
   unsigned short s3_daemon_redirect;
 
@@ -208,6 +212,7 @@ class S3Option {
 
     log_dir = "/var/log/seagate/s3";
     audit_log_dir = "/var/log/seagate/s3";
+    s3_version = "1";
     log_level = FLAGS_s3loglevel;
     audit_log_conf_file = FLAGS_audit_config;
     log_file_max_size_mb = 100;  // 100 MB
@@ -283,6 +288,9 @@ class S3Option {
     redis_srv_addr = "127.0.0.1";
     redis_srv_port = 6397;
 
+    motr_etimedout_max_threshold = 5;
+    motr_etimedout_window_sec = 60;
+
     eventbase = NULL;
 
     // find out the nodename
@@ -336,6 +344,7 @@ class S3Option {
   void set_is_s3_shutting_down(bool is_shutting_down);
 
   std::string get_auth_ip_addr();
+  std::string get_s3_version();
   unsigned short get_auth_port();
   void disable_auth();
   void enable_auth();
@@ -360,6 +369,7 @@ class S3Option {
   bool is_s3server_ssl_enabled();
   bool is_s3server_objectleak_tracking_enabled();
   void set_s3server_objectleak_tracking_enabled(const bool& flag);
+  bool is_s3server_addb_dump_enabled();
   bool is_s3_reuseport_enabled();
   bool is_motr_http_reuseport_enabled();
   const char* get_iam_cert_file();
@@ -428,6 +438,9 @@ class S3Option {
 
   std::string get_redis_srv_addr();
   unsigned short get_redis_srv_port();
+
+  unsigned get_motr_etimedout_max_threshold();
+  unsigned get_motr_etimedout_window_sec();
 
   bool get_motr_read_mempool_zeroed_buffer();
   bool get_libevent_mempool_zeroed_buffer();

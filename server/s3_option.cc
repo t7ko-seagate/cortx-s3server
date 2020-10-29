@@ -185,6 +185,16 @@ bool S3Option::load_section(std::string section_name,
       S3_OPTION_ASSERT_AND_RET(s3_option_node, "S3_REDIS_SERVER_PORT");
       redis_srv_port =
           s3_option_node["S3_REDIS_SERVER_PORT"].as<unsigned short>();
+      S3_OPTION_ASSERT_AND_RET(s3_option_node,
+                               "S3_SERVER_MOTR_ETIMEDOUT_MAX_THRESHOLD");
+      motr_etimedout_max_threshold =
+          s3_option_node["S3_SERVER_MOTR_ETIMEDOUT_MAX_THRESHOLD"].as<uint>();
+      S3_OPTION_ASSERT_AND_RET(s3_option_node,
+                               "S3_SERVER_MOTR_ETIMEDOUT_WINDOW_SEC");
+      motr_etimedout_window_sec =
+          s3_option_node["S3_SERVER_MOTR_ETIMEDOUT_WINDOW_SEC"].as<uint>();
+      S3_OPTION_ASSERT_AND_RET(s3_option_node, "S3_SERVER_ENABLE_ADDB_DUMP");
+      FLAGS_addb = s3_option_node["S3_SERVER_ENABLE_ADDB_DUMP"].as<bool>();
     } else if (section_name == "S3_AUTH_CONFIG") {
       S3_OPTION_ASSERT_AND_RET(s3_option_node, "S3_AUTH_PORT");
       auth_port = s3_option_node["S3_AUTH_PORT"].as<unsigned short>();
@@ -318,6 +328,8 @@ bool S3Option::load_section(std::string section_name,
                                "S3_LIBEVENT_POOL_RESERVE_PERCENT");
       libevent_pool_reserve_percent =
           s3_option_node["S3_LIBEVENT_POOL_RESERVE_PERCENT"].as<unsigned>();
+    } else if (section_name == "S3_VERSION_CONFIG") {
+      s3_version = s3_option_node["VERSION"].as<std::string>();
     }
   } else {
     if (section_name == "S3_SERVER_CONFIG") {
@@ -477,6 +489,17 @@ bool S3Option::load_section(std::string section_name,
       S3_OPTION_ASSERT_AND_RET(s3_option_node, "S3_REDIS_SERVER_PORT");
       redis_srv_port =
           s3_option_node["S3_REDIS_SERVER_PORT"].as<unsigned short>();
+      S3_OPTION_ASSERT_AND_RET(s3_option_node,
+                               "S3_SERVER_MOTR_ETIMEDOUT_MAX_THRESHOLD");
+      motr_etimedout_max_threshold =
+          s3_option_node["S3_SERVER_MOTR_ETIMEDOUT_MAX_THRESHOLD"]
+              .as<unsigned>();
+      S3_OPTION_ASSERT_AND_RET(s3_option_node,
+                               "S3_SERVER_MOTR_ETIMEDOUT_WINDOW_SEC");
+      motr_etimedout_window_sec =
+          s3_option_node["S3_SERVER_MOTR_ETIMEDOUT_WINDOW_SEC"].as<unsigned>();
+      S3_OPTION_ASSERT_AND_RET(s3_option_node, "S3_SERVER_ENABLE_ADDB_DUMP");
+      FLAGS_addb = s3_option_node["S3_SERVER_ENABLE_ADDB_DUMP"].as<bool>();
     } else if (section_name == "S3_AUTH_CONFIG") {
       if (!(cmd_opt_flag & S3_OPTION_AUTH_PORT)) {
         S3_OPTION_ASSERT_AND_RET(s3_option_node, "S3_AUTH_PORT");
@@ -602,6 +625,8 @@ bool S3Option::load_section(std::string section_name,
              &libevent_pool_buffer_size);
       sscanf(libevent_max_read_size_str.c_str(), "%zu",
              &libevent_max_read_size);
+    } else if (section_name == "S3_VERSION_CONFIG") {
+      s3_version = s3_option_node["VERSION"].as<std::string>();
     }
   }
   return true;
@@ -781,6 +806,7 @@ void S3Option::dump_options() {
 
   s3_log(S3_LOG_INFO, "", "S3_AUTH_IP_ADDR = %s\n", auth_ip_addr.c_str());
   s3_log(S3_LOG_INFO, "", "S3_AUTH_PORT = %d\n", auth_port);
+  s3_log(S3_LOG_INFO, "", "S3_version = %s\n", s3_version.c_str());
 
   s3_log(S3_LOG_INFO, "", "S3_MOTR_LOCAL_ADDR = %s\n", motr_local_addr.c_str());
   s3_log(S3_LOG_INFO, "", "S3_MOTR_HA_ADDR =  %s\n", motr_ha_addr.c_str());
@@ -873,6 +899,13 @@ void S3Option::dump_options() {
   s3_log(S3_LOG_INFO, "", "S3_REDIS_SERVER_ADDRESS = %s\n",
          redis_srv_addr.c_str());
 
+  s3_log(S3_LOG_INFO, "", "S3_SERVER_MOTR_ETIMEDOUT_MAX_THRESHOLD = %u\n",
+         motr_etimedout_max_threshold);
+  s3_log(S3_LOG_INFO, "", "S3_SERVER_MOTR_ETIMEDOUT_WINDOW_SEC = %u\n",
+         motr_etimedout_window_sec);
+
+  s3_log(S3_LOG_INFO, "", "S3_SERVER_ENABLE_ADDB_DUMP = %s\n",
+         is_s3server_addb_dump_enabled() ? "true" : "false");
   s3_log(S3_LOG_INFO, "", "S3_MOTR_READ_MEMPOOL_ZERO_BUFFER=%s\n",
          motr_read_mempool_zeroed_buffer ? "true" : "false");
   s3_log(S3_LOG_INFO, "", "S3_LIBEVENT_MEMPOOL_ZERO_BUFFER=%s\n",
@@ -926,6 +959,8 @@ void S3Option::set_is_s3_shutting_down(bool is_shutting_down) {
 }
 
 unsigned short S3Option::get_auth_port() { return auth_port; }
+
+std::string S3Option::get_s3_version() { return s3_version; }
 
 unsigned short S3Option::get_motr_layout_id() { return motr_layout_id; }
 
@@ -1109,6 +1144,8 @@ void S3Option::enable_auth() { FLAGS_disable_auth = false; }
 
 bool S3Option::is_auth_disabled() { return FLAGS_disable_auth; }
 
+bool S3Option::is_s3server_addb_dump_enabled() { return FLAGS_addb; }
+
 unsigned short S3Option::s3_performance_enabled() { return perf_enabled; }
 
 bool S3Option::is_s3server_ssl_enabled() { return s3server_ssl_enabled; }
@@ -1205,6 +1242,14 @@ bool S3Option::is_getoid_enabled() { return FLAGS_getoid; }
 std::string S3Option::get_redis_srv_addr() { return redis_srv_addr; }
 
 unsigned short S3Option::get_redis_srv_port() { return redis_srv_port; }
+
+unsigned S3Option::get_motr_etimedout_max_threshold() {
+  return motr_etimedout_max_threshold;
+}
+
+unsigned S3Option::get_motr_etimedout_window_sec() {
+  return motr_etimedout_window_sec;
+}
 
 bool S3Option::get_motr_read_mempool_zeroed_buffer() {
   return motr_read_mempool_zeroed_buffer;

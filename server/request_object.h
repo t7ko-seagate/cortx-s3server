@@ -80,6 +80,7 @@ class RequestObject {
   struct event* client_read_timer_event;
 
   std::string request_id;
+  bool is_service_req_head;
 
   std::string error_code_str;
 
@@ -217,6 +218,10 @@ class RequestObject {
     request_error = req_error;
   }
 
+  void set_bytes_sent(size_t total_bytes_sent) {
+    bytes_sent = total_bytes_sent;
+  }
+
   /*
      Pause and resume will essentially stop and start attempting to read from
      the client socket.
@@ -235,7 +240,7 @@ class RequestObject {
   // we dont flood with data coming from socket in user buffers.
   virtual void pause() {
     if (!client_connected()) {
-      s3_log(S3_LOG_WARN, request_id, "s3 client disconnected state.\n");
+      s3_log(S3_LOG_INFO, request_id, "s3 client is disconnected.\n");
       return;
     }
     if (is_s3_client_read_error()) {
@@ -256,7 +261,7 @@ class RequestObject {
 
   virtual void resume(bool set_read_timer = true) {
     if (!client_connected()) {
-      s3_log(S3_LOG_WARN, request_id, "s3 client disconnected state.\n");
+      s3_log(S3_LOG_INFO, request_id, "s3 client is disconnected.\n");
       return;
     }
     if (is_paused) {
@@ -354,6 +359,7 @@ class RequestObject {
 
   void respond_unsupported_api();
   virtual void respond_retry_after(int retry_after_in_secs = 1);
+  void set_head_service() { is_service_req_head = true; }
 
   FRIEND_TEST(S3MockAuthClientCheckTest, CheckAuth);
   FRIEND_TEST(RequestObjectTest, ReturnsValidUriPaths);
