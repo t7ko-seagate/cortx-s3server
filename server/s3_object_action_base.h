@@ -27,6 +27,8 @@
 #include <memory>
 #include <vector>
 
+#include <sys/time.h>
+
 #include "s3_action_base.h"
 #include "s3_bucket_metadata.h"
 #include "s3_factory.h"
@@ -46,6 +48,8 @@
 class S3ObjectAction : public S3Action {
 
  protected:
+  struct timeval start_time;
+
   std::shared_ptr<S3ObjectMetadata> object_metadata;
   std::shared_ptr<S3BucketMetadata> bucket_metadata;
   std::shared_ptr<S3BucketMetadataFactory> bucket_metadata_factory;
@@ -87,4 +91,3 @@ class S3ObjectAction : public S3Action {
 };
 
 #endif
-

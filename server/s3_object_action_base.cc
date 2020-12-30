@@ -56,7 +56,7 @@ S3ObjectAction::~S3ObjectAction() {
 
 void S3ObjectAction::fetch_bucket_info() {
   s3_log(S3_LOG_INFO, stripped_request_id, "%s Entry\n", __func__);
-
+  gettimeofday(&start_time, NULL);
   bucket_metadata =
       bucket_metadata_factory->create_bucket_metadata_obj(request);
   bucket_metadata->load(
@@ -66,7 +66,36 @@ void S3ObjectAction::fetch_bucket_info() {
   s3_log(S3_LOG_DEBUG, "", "%s Exit", __func__);
 }
 
+static long avg_num_samples = 0;
+static long avg_pos = 0;
+static long const avg_N = 20;
+static double avg_sec = 0;
+static double avg_sec_arr[avg_N] = {0};
+
 void S3ObjectAction::fetch_bucket_info_success() {
+
+  struct timeval end_time, duration;
+  double duration_sec;
+  gettimeofday(&end_time, NULL);
+  timersub(&end_time, &start_time, &duration);
+  duration_sec = duration.tv_sec + duration.tv_usec * 0.000001;
+  if (avg_num_samples) {
+    if (avg_num_samples < avg_N) {
+      avg_sec =
+          (avg_sec * avg_num_samples + duration_sec) / (avg_num_samples + 1);
+    } else {
+      avg_sec = avg_sec - avg_sec_arr[avg_pos] / avg_N + duration_sec / avg_N;
+    }
+  } else {
+    avg_sec = duration_sec;
+  }
+  avg_sec_arr[avg_pos] = duration_sec;
+  avg_pos = (avg_pos + 1) % avg_N;
+  avg_num_samples++;
+  s3_log(S3_LOG_INFO, request_id,
+         "Fetch bucket info time: %ld.%06ld, avg%ld: %.6lf",
+         (long)duration.tv_sec, (long)duration.tv_usec, avg_N, avg_sec);
+
   request->get_audit_info().set_bucket_owner_canonical_id(
       bucket_metadata->get_owner_canonical_id());
   fetch_object_info();
